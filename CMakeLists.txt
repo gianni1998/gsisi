@@ -10,6 +10,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 file(GLOB SOURCES "src/*.cpp")
 list(REMOVE_ITEM SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp")
+file(GLOB TEST_SOURCES "tests/*.cpp")
 
 add_library(gsisi_frontend ${SOURCES})
 
@@ -24,3 +25,24 @@ target_link_libraries(si_compiler
     PRIVATE
         gsisi_frontend
 )
+
+# --------------------------------------------------
+# Tests
+# --------------------------------------------------
+option(BUILD_TESTING "Build the gsisi tests" ON)
+
+if(BUILD_TESTING)
+    enable_testing()
+
+    add_executable(parser_tests
+        ${TEST_SOURCES}
+        ${SOURCES}
+    )
+
+    target_include_directories(parser_tests PRIVATE include)
+
+    add_test(
+        NAME parser_tests
+        COMMAND parser_tests
+    )
+endif()
