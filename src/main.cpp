@@ -10,6 +10,7 @@
 #include "ASTPrinter.hpp"
 #include "Lexer.hpp"
 #include "Parser.hpp"
+#include "SemanticAnalyser.hpp"
 
 /**
  * Usage: ./si_compiler <source_file.si>
@@ -49,7 +50,10 @@ int main(int argc, char* argv[]) {
         std::unique_ptr<ProgramNode> ast =
             parser.parseProgram();
 
-        std::cout << "Successfully parsed AST\n\n";
+        SemanticAnalyser analyser;
+        analyser.analyze(*ast);
+
+        std::cout << "Semantic analysis passed\n\n";
 
         ASTPrinter printer(std::cout);
         printer.print(*ast);

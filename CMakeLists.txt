@@ -10,7 +10,6 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 file(GLOB SOURCES "src/*.cpp")
 list(REMOVE_ITEM SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp")
-file(GLOB TEST_SOURCES "tests/*.cpp")
 
 add_library(gsisi_frontend ${SOURCES})
 
@@ -35,14 +34,30 @@ if(BUILD_TESTING)
     enable_testing()
 
     add_executable(parser_tests
-        ${TEST_SOURCES}
+        tests/ParserTests.cpp
         ${SOURCES}
     )
 
+    add_executable(semantic_tests
+        tests/SemanticAnalyserTests.cpp
+    )
+
     target_include_directories(parser_tests PRIVATE include)
+    target_link_libraries(semantic_tests PRIVATE gsisi_frontend)
 
     add_test(
         NAME parser_tests
         COMMAND parser_tests
+    )
+
+    add_test(
+        NAME semantic_tests
+        COMMAND semantic_tests
+    )
+
+    add_test(
+        NAME semantic_sample
+        COMMAND si_compiler
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/test-2.si
     )
 endif()
