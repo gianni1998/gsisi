@@ -1,0 +1,10 @@
+fn main(): int {
+    let hundred: int = 100;
+    let five: int = 5;
+    let quotient: int = hundred / five;
+    let doubled: int = quotient * 2;
+    let answer: int = doubled + 2;
+    let enabled: bool = !false;
+
+    return answer;
+}

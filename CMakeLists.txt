@@ -46,9 +46,14 @@ if(BUILD_TESTING)
         tests/IRGeneratorTests.cpp
     )
 
+    add_executable(assembly_generator_tests
+        tests/AssemblyGeneratorTests.cpp
+    )
+
     target_include_directories(parser_tests PRIVATE include)
     target_link_libraries(semantic_tests PRIVATE gsisi_frontend)
     target_link_libraries(ir_generator_tests PRIVATE gsisi_frontend)
+    target_link_libraries(assembly_generator_tests PRIVATE gsisi_frontend)
 
     add_test(
         NAME parser_tests
@@ -65,15 +70,47 @@ if(BUILD_TESTING)
         COMMAND ir_generator_tests
     )
 
+    # add_test(
+    #     NAME semantic_sample
+    #     COMMAND si_compiler
+    #         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test-2.si
+    #         ${CMAKE_CURRENT_SOURCE_DIR}/build/test-2.asm
+    # )
+
+    # add_test(
+    #     NAME compiler_ir_smoke_test
+    #     COMMAND si_compiler
+    #             ${CMAKE_CURRENT_SOURCE_DIR}/tests/test-3.si
+    #             ${CMAKE_CURRENT_SOURCE_DIR}/build/test-3.asm
+    # )
+
     add_test(
-        NAME semantic_sample
-        COMMAND si_compiler
-            ${CMAKE_CURRENT_SOURCE_DIR}/tests/test-2.si
+        NAME assembly_generator_tests
+        COMMAND assembly_generator_tests
+    )
+
+    find_program(
+        NASM_EXECUTABLE
+        nasm
+        REQUIRED
+    )
+
+    find_program(
+        LD_EXECUTABLE
+        ld
+        REQUIRED
     )
 
     add_test(
-        NAME compiler_ir_smoke_test
-        COMMAND si_compiler
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/test-3.si
+        NAME backend_native_smoke
+        COMMAND
+            bash
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_backend_smoke_test.sh
+            $<TARGET_FILE:si_compiler>
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/test-4.si
+            ${CMAKE_CURRENT_BINARY_DIR}/backend-smoke
+            ${NASM_EXECUTABLE}
+            ${LD_EXECUTABLE}
+            42
     )
 endif()
