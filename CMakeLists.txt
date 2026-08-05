@@ -18,11 +18,25 @@ target_include_directories(gsisi_frontend
         ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+
 add_executable(si_compiler src/main.cpp)
 
 target_link_libraries(si_compiler
     PRIVATE
         gsisi_frontend
+)
+
+add_custom_command(
+    TARGET si_compiler
+    POST_BUILD
+    COMMAND
+        ${CMAKE_COMMAND} -E make_directory
+        $<TARGET_FILE_DIR:si_compiler>/libsi
+    COMMAND
+        ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/libsi/out.asm
+        $<TARGET_FILE_DIR:si_compiler>/libsi/out.asm
+    COMMENT "Copying the Si runtime next to the compiler"
 )
 
 # --------------------------------------------------
@@ -101,16 +115,19 @@ if(BUILD_TESTING)
         REQUIRED
     )
 
-    add_test(
-        NAME backend_native_smoke
-        COMMAND
-            bash
-            ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_backend_smoke_test.sh
-            $<TARGET_FILE:si_compiler>
-            ${CMAKE_CURRENT_SOURCE_DIR}/tests/test-4.si
-            ${CMAKE_CURRENT_BINARY_DIR}/backend-smoke
-            ${NASM_EXECUTABLE}
-            ${LD_EXECUTABLE}
-            42
-    )
+    if(NASM_EXECUTABLE AND LD_EXECUTABLE)
+        add_test(
+            NAME backend_native_smoke
+            COMMAND
+                bash
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_backend_smoke_test.sh
+                $<TARGET_FILE:si_compiler>
+                ${CMAKE_CURRENT_SOURCE_DIR}
+                ${CMAKE_CURRENT_BINARY_DIR}/backend-smoke
+        )
+    else()
+        message(WARNING
+            "NASM or ld was not found; the native runtime smoke test is disabled"
+        )
+    endif()
 endif()

@@ -1,68 +1,159 @@
 #include "AssemblyGenerator.hpp"
 
+#include <array>
 #include <stdexcept>
+#include <unordered_set>
 #include <utility>
 
 void AssemblyGenerator::generate(
     const IRProgram& program,
     std::ostream& output
 ) {
+    reset();
+    collectSignatures(program);
+    collectRuntimeImports(program);
     validateProgram(program);
     emitProgram(program, output);
 
     if (!output) {
-        throw std::runtime_error(
-            "Assembly error: failed while writing output"
-        );
+        throw std::runtime_error("Assembly error: failed while writing output");
     }
 }
 
-void AssemblyGenerator::validateProgram(
-    const IRProgram& program
-) const {
-    bool hasMain = false;
+void AssemblyGenerator::reset() {
+    _context = FunctionContext{};
+    _signatures.clear();
+    _runtimeImports.clear();
 
+    _signatures.emplace(
+        "out",
+        FunctionSignature{
+            .parameterCount = 1,
+            .returnType = Type::Void,
+            .runtimeFunction = true
+        }
+    );
+}
+
+void AssemblyGenerator::collectSignatures(const IRProgram& program) {
     for (const IRFunction& function : program.functions) {
-        if (function.name == "main") {
-            hasMain = true;
+        if (function.name.empty()) {
+            throw std::runtime_error("Assembly error: function name cannot be empty");
         }
 
-        validateFunction(function);
-    }
+        if (_signatures.contains(function.name)) {
+            throw std::runtime_error(
+                "Assembly error: duplicate or reserved function name '" +
+                function.name + "'"
+            );
+        }
 
-    if (!hasMain) {
-        throw std::runtime_error(
-            "Assembly error: IR program has no main function"
+        _signatures.emplace(
+            function.name,
+            FunctionSignature{
+                .parameterCount = function.parameters.size(),
+                .returnType = function.returnType,
+                .runtimeFunction = false
+            }
         );
     }
 }
 
-void AssemblyGenerator::validateFunction(
-    const IRFunction& function
-) const {
-    if (!function.parameters.empty()) {
+void AssemblyGenerator::collectRuntimeImports(const IRProgram& program) {
+    for (const IRFunction& function : program.functions) {
+        for (const IRBlock& block : function.blocks) {
+            for (const IRInstruction& instruction : block.instructions) {
+                if (instruction.op != IROp::Call) {
+                    continue;
+                }
+
+                const auto found = _signatures.find(instruction.callee);
+
+                if (found != _signatures.end() && found->second.runtimeFunction) {
+                    _runtimeImports.insert(instruction.callee);
+                }
+            }
+        }
+    }
+}
+
+void AssemblyGenerator::validateProgram(const IRProgram& program) const {
+    const auto mainFunction = _signatures.find("main");
+
+    if (mainFunction == _signatures.end()) {
+        throw std::runtime_error("Assembly error: IR program has no main function");
+    }
+
+    if (mainFunction->second.parameterCount != 0 ||
+        mainFunction->second.returnType != Type::Int) {
         throw std::runtime_error(
-            "Assembly error: function parameters are not "
-            "supported in Chapter 7 ('" +
-            function.name + "')"
+            "Assembly error: main must have signature fn main(): int"
         );
+    }
+
+    for (const IRFunction& function : program.functions) {
+        validateFunction(function);
+    }
+}
+
+void AssemblyGenerator::validateFunction(const IRFunction& function) const {
+    if (function.parameters.size() > 6) {
+        throw std::runtime_error(
+            "Assembly error: function '" + function.name +
+            "' has more than 6 parameters"
+        );
+    }
+
+    std::unordered_set<std::string> storageNames;
+
+    for (const IRParameter& parameter : function.parameters) {
+        if (parameter.name.empty() || parameter.type == Type::Void) {
+            throw std::runtime_error(
+                "Assembly error: invalid parameter in function '" +
+                function.name + "'"
+            );
+        }
+
+        if (!storageNames.insert(parameter.name).second) {
+            throw std::runtime_error(
+                "Assembly error: duplicate storage name '" +
+                parameter.name + "' in function '" + function.name + "'"
+            );
+        }
+    }
+
+    for (const IRLocal& local : function.locals) {
+        if (local.name.empty() || local.type == Type::Void) {
+            throw std::runtime_error(
+                "Assembly error: invalid local in function '" +
+                function.name + "'"
+            );
+        }
+
+        if (!storageNames.insert(local.name).second) {
+            throw std::runtime_error(
+                "Assembly error: duplicate storage name '" +
+                local.name + "' in function '" + function.name + "'"
+            );
+        }
     }
 
     for (const IRBlock& block : function.blocks) {
         for (const IRInstruction& instruction : block.instructions) {
-            validateInstruction(instruction);
+            validateInstruction(instruction, function);
         }
     }
 }
 
 void AssemblyGenerator::validateInstruction(
-    const IRInstruction& instruction
-) {
+    const IRInstruction& instruction,
+    const IRFunction& function
+) const {
     if (!isSupported(instruction.op)) {
         throw std::runtime_error(
             "Assembly error: instruction '" +
             std::string(toString(instruction.op)) +
-            "' is not supported in Chapter 7"
+            "' is not supported in Chapter 8"
         );
     }
 
@@ -96,11 +187,62 @@ void AssemblyGenerator::validateInstruction(
             requireArgumentCount(instruction, 1);
             return;
 
-        case IROp::Return:
-            if (instruction.args.size() > 1) {
+        case IROp::Call: {
+            if (instruction.callee.empty()) {
+                throw std::runtime_error("Assembly error: call has no callee");
+            }
+
+            const auto found = _signatures.find(instruction.callee);
+
+            if (found == _signatures.end()) {
                 throw std::runtime_error(
-                    "Assembly error: return expects zero or one argument"
+                    "Assembly error: call to unknown function '" +
+                    instruction.callee + "'"
                 );
+            }
+
+            const FunctionSignature& signature = found->second;
+
+            if (instruction.args.size() != signature.parameterCount) {
+                throw std::runtime_error(
+                    "Assembly error: function '" + instruction.callee +
+                    "' expects " + std::to_string(signature.parameterCount) +
+                    " argument(s), got " +
+                    std::to_string(instruction.args.size())
+                );
+            }
+
+            if (instruction.args.size() > 6) {
+                throw std::runtime_error(
+                    "Assembly error: calls with more than 6 arguments are not supported"
+                );
+            }
+
+            if (instruction.type != signature.returnType) {
+                throw std::runtime_error(
+                    "Assembly error: call result type does not match function '" +
+                    instruction.callee + "'"
+                );
+            }
+
+            if (signature.returnType == Type::Void) {
+                if (!instruction.dst.empty()) {
+                    throw std::runtime_error(
+                        "Assembly error: void call cannot have a destination"
+                    );
+                }
+            } else {
+                requireDestination(instruction);
+            }
+
+            return;
+        }
+
+        case IROp::Return:
+            if (function.returnType == Type::Void) {
+                requireArgumentCount(instruction, 0);
+            } else {
+                requireArgumentCount(instruction, 1);
             }
             return;
 
@@ -108,67 +250,20 @@ void AssemblyGenerator::validateInstruction(
             break;
     }
 
-    throw std::runtime_error(
-        "Assembly internal error: unvalidated instruction"
-    );
-}
-
-void AssemblyGenerator::requireDestination(
-    const IRInstruction& instruction
-) {
-    if (instruction.dst.empty()) {
-        throw std::runtime_error(
-            "Assembly error: instruction '" +
-            std::string(toString(instruction.op)) +
-            "' requires a destination"
-        );
-    }
-}
-
-void AssemblyGenerator::requireArgumentCount(
-    const IRInstruction& instruction,
-    std::size_t expected
-) {
-    if (instruction.args.size() != expected) {
-        throw std::runtime_error(
-            "Assembly error: instruction '" +
-            std::string(toString(instruction.op)) +
-            "' expects " + std::to_string(expected) +
-            " argument(s), got " +
-            std::to_string(instruction.args.size())
-        );
-    }
-}
-
-bool AssemblyGenerator::isSupported(
-    IROp operation
-) noexcept {
-    switch (operation) {
-        case IROp::ConstInt:
-        case IROp::ConstBool:
-        case IROp::Load:
-        case IROp::Store:
-        case IROp::Add:
-        case IROp::Subtract:
-        case IROp::Multiply:
-        case IROp::Divide:
-        case IROp::Negate:
-        case IROp::Not:
-        case IROp::Return:
-            return true;
-
-        default:
-            return false;
-    }
+    throw std::runtime_error("Assembly internal error: unvalidated instruction");
 }
 
 void AssemblyGenerator::emitProgram(
     const IRProgram& program,
     std::ostream& output
 ) {
-    output << "global _start\n\n";
-    output << "section .text\n\n";
+    output << "global _start\n";
 
+    for (const std::string& runtimeFunction : _runtimeImports) {
+        output << "extern " << functionLabel(runtimeFunction) << '\n';
+    }
+
+    output << "\nsection .text\n\n";
     output << "_start:\n";
     output << "    call si_main\n";
     output << "    mov edi, eax\n";
@@ -178,86 +273,6 @@ void AssemblyGenerator::emitProgram(
     for (const IRFunction& function : program.functions) {
         emitFunction(function, output);
     }
-}
-
-std::string AssemblyGenerator::functionLabel(
-    const std::string& name
-) {
-    return "si_" + name;
-}
-
-std::string AssemblyGenerator::blockLabel(
-    const std::string& functionName,
-    const std::string& blockName
-) {
-    return ".L_" + functionName + "_" + blockName;
-}
-
-void AssemblyGenerator::allocateStackSlots(
-    const IRFunction& function
-) {
-    _context = FunctionContext{};
-    _context.returnLabel =
-        ".L_" + function.name + "_return";
-
-    for (const IRLocal& local : function.locals) {
-        allocateSlot(local.name);
-    }
-
-    for (const IRBlock& block : function.blocks) {
-        for (const IRInstruction& instruction : block.instructions) {
-            if (!instruction.dst.empty()) {
-                allocateSlot(instruction.dst);
-            }
-        }
-    }
-}
-
-void AssemblyGenerator::allocateSlot(
-    const std::string& name
-) {
-    if (_context.stackSlots.contains(name)) {
-        return;
-    }
-
-    _context.nextOffset += 4;
-    _context.stackSlots.emplace(
-        name,
-        _context.nextOffset
-    );
-}
-
-int AssemblyGenerator::slotOffset(
-    const std::string& name
-) const {
-    const auto found = _context.stackSlots.find(name);
-
-    if (found == _context.stackSlots.end()) {
-        throw std::runtime_error(
-            "Assembly error: no stack slot for IR value '" +
-            name + "'"
-        );
-    }
-
-    return found->second;
-}
-
-int AssemblyGenerator::stackSize() const noexcept {
-    constexpr int alignment = 16;
-    const int size = _context.nextOffset;
-
-    return (
-        (size + alignment - 1) / alignment
-    ) * alignment;
-}
-
-std::string AssemblyGenerator::stackOperand(
-    const std::string& name
-) const {
-    return
-        "dword [rbp - " +
-        std::to_string(slotOffset(name)) +
-        "]";
 }
 
 void AssemblyGenerator::emitFunction(
@@ -273,16 +288,17 @@ void AssemblyGenerator::emitFunction(
     const int frameSize = stackSize();
 
     if (frameSize > 0) {
+        output << "    sub rsp, " << frameSize << '\n';
+    }
+
+    for (std::size_t index = 0; index < function.parameters.size(); ++index) {
         output
-            << "    sub rsp, "
-            << frameSize
-            << "\n";
+            << "    mov " << stackOperand(function.parameters[index].name)
+            << ", " << parameterRegister(index) << '\n';
     }
 
     for (const IRBlock& block : function.blocks) {
-        output
-            << blockLabel(function.name, block.name)
-            << ":\n";
+        output << blockLabel(function.name, block.name) << ":\n";
 
         for (const IRInstruction& instruction : block.instructions) {
             emitInstruction(instruction, output);
@@ -293,6 +309,58 @@ void AssemblyGenerator::emitFunction(
     output << "    mov rsp, rbp\n";
     output << "    pop rbp\n";
     output << "    ret\n\n";
+}
+
+void AssemblyGenerator::allocateStackSlots(const IRFunction& function) {
+    _context = FunctionContext{};
+    _context.returnLabel = ".L_" + function.name + "_return";
+
+    for (const IRParameter& parameter : function.parameters) {
+        allocateSlot(parameter.name);
+    }
+
+    for (const IRLocal& local : function.locals) {
+        allocateSlot(local.name);
+    }
+
+    for (const IRBlock& block : function.blocks) {
+        for (const IRInstruction& instruction : block.instructions) {
+            if (!instruction.dst.empty()) {
+                allocateSlot(instruction.dst);
+            }
+        }
+    }
+}
+
+void AssemblyGenerator::allocateSlot(const std::string& name) {
+    if (_context.stackSlots.contains(name)) {
+        return;
+    }
+
+    _context.nextOffset += 4;
+    _context.stackSlots.emplace(name, _context.nextOffset);
+}
+
+int AssemblyGenerator::slotOffset(const std::string& name) const {
+    const auto found = _context.stackSlots.find(name);
+
+    if (found == _context.stackSlots.end()) {
+        throw std::runtime_error(
+            "Assembly error: no stack slot for IR value '" + name + "'"
+        );
+    }
+
+    return found->second;
+}
+
+int AssemblyGenerator::stackSize() const noexcept {
+    constexpr int alignment = 16;
+    const int size = _context.nextOffset;
+    return ((size + alignment - 1) / alignment) * alignment;
+}
+
+std::string AssemblyGenerator::stackOperand(const std::string& name) const {
+    return "dword [rbp - " + std::to_string(slotOffset(name)) + "]";
 }
 
 void AssemblyGenerator::emitInstruction(
@@ -325,14 +393,17 @@ void AssemblyGenerator::emitInstruction(
             emitUnary(instruction, output);
             return;
 
+        case IROp::Call:
+            emitCall(instruction, output);
+            return;
+
         case IROp::Return:
             emitReturn(instruction, output);
             return;
 
         default:
             throw std::runtime_error(
-                "Assembly internal error: unsupported "
-                "instruction reached emission"
+                "Assembly internal error: unsupported instruction reached emission"
             );
     }
 }
@@ -341,17 +412,13 @@ void AssemblyGenerator::emitConstant(
     const IRInstruction& instruction,
     std::ostream& output
 ) {
-    const int value =
-        instruction.op == IROp::ConstBool
-            ? (instruction.boolValue ? 1 : 0)
-            : instruction.intValue;
+    const int value = instruction.op == IROp::ConstBool
+        ? (instruction.boolValue ? 1 : 0)
+        : instruction.intValue;
 
     output
-        << "    mov "
-        << stackOperand(instruction.dst)
-        << ", "
-        << value
-        << '\n';
+        << "    mov " << stackOperand(instruction.dst)
+        << ", " << value << '\n';
 }
 
 void AssemblyGenerator::emitLoad(
@@ -359,12 +426,8 @@ void AssemblyGenerator::emitLoad(
     std::ostream& output
 ) {
     output
-        << "    mov eax, "
-        << stackOperand(instruction.args[0])
-        << '\n'
-        << "    mov "
-        << stackOperand(instruction.dst)
-        << ", eax\n";
+        << "    mov eax, " << stackOperand(instruction.args[0]) << '\n'
+        << "    mov " << stackOperand(instruction.dst) << ", eax\n";
 }
 
 void AssemblyGenerator::emitStore(
@@ -372,66 +435,44 @@ void AssemblyGenerator::emitStore(
     std::ostream& output
 ) {
     output
-        << "    mov eax, "
-        << stackOperand(instruction.args[0])
-        << '\n'
-        << "    mov "
-        << stackOperand(instruction.args[1])
-        << ", eax\n";
+        << "    mov eax, " << stackOperand(instruction.args[0]) << '\n'
+        << "    mov " << stackOperand(instruction.args[1]) << ", eax\n";
 }
 
 void AssemblyGenerator::emitBinary(
     const IRInstruction& instruction,
     std::ostream& output
 ) {
-    output
-        << "    mov eax, "
-        << stackOperand(instruction.args[0])
-        << '\n';
+    output << "    mov eax, " << stackOperand(instruction.args[0]) << '\n';
 
-    const std::string right =
-        stackOperand(instruction.args[1]);
+    const std::string right = stackOperand(instruction.args[1]);
 
     switch (instruction.op) {
         case IROp::Add:
-            output
-                << "    add eax, "
-                << right
-                << '\n';
+            output << "    add eax, " << right << '\n';
             break;
 
         case IROp::Subtract:
-            output
-                << "    sub eax, "
-                << right
-                << '\n';
+            output << "    sub eax, " << right << '\n';
             break;
 
         case IROp::Multiply:
-            output
-                << "    imul eax, "
-                << right
-                << '\n';
+            output << "    imul eax, " << right << '\n';
             break;
 
         case IROp::Divide:
             output << "    cdq\n";
-            output
-                << "    idiv "
-                << right
-                << '\n';
+            output << "    idiv " << right << '\n';
             break;
 
         default:
             throw std::runtime_error(
-                "Assembly internal error: invalid "
-                "binary instruction"
+                "Assembly internal error: invalid binary instruction"
             );
     }
 
     output
-        << "    mov "
-        << stackOperand(instruction.dst)
+        << "    mov " << stackOperand(instruction.dst)
         << ", eax\n";
 }
 
@@ -439,10 +480,7 @@ void AssemblyGenerator::emitUnary(
     const IRInstruction& instruction,
     std::ostream& output
 ) {
-    output
-        << "    mov eax, "
-        << stackOperand(instruction.args[0])
-        << '\n';
+    output << "    mov eax, " << stackOperand(instruction.args[0]) << '\n';
 
     switch (instruction.op) {
         case IROp::Negate:
@@ -457,15 +495,32 @@ void AssemblyGenerator::emitUnary(
 
         default:
             throw std::runtime_error(
-                "Assembly internal error: invalid "
-                "unary instruction"
+                "Assembly internal error: invalid unary instruction"
             );
     }
 
     output
-        << "    mov "
-        << stackOperand(instruction.dst)
+        << "    mov " << stackOperand(instruction.dst)
         << ", eax\n";
+}
+
+void AssemblyGenerator::emitCall(
+    const IRInstruction& instruction,
+    std::ostream& output
+) {
+    for (std::size_t index = 0; index < instruction.args.size(); ++index) {
+        output
+            << "    mov " << parameterRegister(index) << ", "
+            << stackOperand(instruction.args[index]) << '\n';
+    }
+
+    output << "    call " << functionLabel(instruction.callee) << '\n';
+
+    if (!instruction.dst.empty()) {
+        output
+            << "    mov " << stackOperand(instruction.dst)
+            << ", eax\n";
+    }
 }
 
 void AssemblyGenerator::emitReturn(
@@ -479,8 +534,78 @@ void AssemblyGenerator::emitReturn(
             << '\n';
     }
 
-    output
-        << "    jmp "
-        << _context.returnLabel
-        << '\n';
+    output << "    jmp " << _context.returnLabel << '\n';
+}
+
+void AssemblyGenerator::requireDestination(
+    const IRInstruction& instruction
+) {
+    if (instruction.dst.empty()) {
+        throw std::runtime_error(
+            "Assembly error: instruction '" +
+            std::string(toString(instruction.op)) +
+            "' requires a destination"
+        );
+    }
+}
+
+void AssemblyGenerator::requireArgumentCount(
+    const IRInstruction& instruction,
+    std::size_t expected
+) {
+    if (instruction.args.size() != expected) {
+        throw std::runtime_error(
+            "Assembly error: instruction '" +
+            std::string(toString(instruction.op)) +
+            "' expects " + std::to_string(expected) +
+            " argument(s), got " +
+            std::to_string(instruction.args.size())
+        );
+    }
+}
+
+bool AssemblyGenerator::isSupported(IROp operation) noexcept {
+    switch (operation) {
+        case IROp::ConstInt:
+        case IROp::ConstBool:
+        case IROp::Load:
+        case IROp::Store:
+        case IROp::Add:
+        case IROp::Subtract:
+        case IROp::Multiply:
+        case IROp::Divide:
+        case IROp::Negate:
+        case IROp::Not:
+        case IROp::Call:
+        case IROp::Return:
+            return true;
+
+        default:
+            return false;
+    }
+}
+
+const char* AssemblyGenerator::parameterRegister(std::size_t index) {
+    static constexpr std::array<const char*, 6> registers{
+        "edi", "esi", "edx", "ecx", "r8d", "r9d"
+    };
+
+    if (index >= registers.size()) {
+        throw std::runtime_error(
+            "Assembly error: more than 6 register arguments are not supported"
+        );
+    }
+
+    return registers[index];
+}
+
+std::string AssemblyGenerator::functionLabel(const std::string& name) {
+    return "si_" + name;
+}
+
+std::string AssemblyGenerator::blockLabel(
+    const std::string& functionName,
+    const std::string& blockName
+) {
+    return ".L_" + functionName + "_" + blockName;
 }

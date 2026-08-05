@@ -1,40 +1,41 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 6 ]]; then
-    echo "Usage: $0 <compiler> <source.si> <work-dir> <nasm> <ld> <expected-exit>" >&2
-    exit 2
-fi
-
 compiler="$1"
-source_file="$2"
+source_root="$2"
 work_dir="$3"
-nasm_executable="$4"
-linker_executable="$5"
-expected_exit="$6"
 
 rm -rf "$work_dir"
-mkdir -p "$work_dir"
+mkdir -p "$work_dir/path with spaces"
 
-assembly_file="$work_dir/program.asm"
-object_file="$work_dir/program.o"
-executable_file="$work_dir/program"
+program="$work_dir/path with spaces/test-program"
+"$compiler" "$source_root/tests/test-5.si" "$program"
 
-"$compiler" "$source_file" "$assembly_file"
-"$nasm_executable" -f elf64 "$assembly_file" -o "$object_file"
-"$linker_executable" "$object_file" -o "$executable_file"
+actual_output="$("$program")"
 
-# The test program intentionally returns 42, which is a non-zero
-# process status. Temporarily disable immediate-exit behaviour so
-# we can inspect it rather than treating it as a shell failure.
-set +e
-"$executable_file"
-actual_exit=$?
-set -e
-
-if [[ "$actual_exit" -ne "$expected_exit" ]]; then
-    echo "Expected exit code $expected_exit, got $actual_exit" >&2
+if [[ "$actual_output" != "42" ]]; then
+    echo "Expected test program to print 42, got: $actual_output" >&2
     exit 1
 fi
 
-echo "Native backend smoke test passed with exit code $actual_exit"
+negative_source="$work_dir/negative.si"
+negative_program="$work_dir/path with spaces/negative-program"
+
+cat > "$negative_source" <<'SI'
+fn main(): int {
+    out(-42);
+    out(0);
+    return 0;
+}
+SI
+
+"$compiler" "$negative_source" "$negative_program"
+negative_output="$("$negative_program")"
+
+expected_negative=$'-42\n0'
+
+if [[ "$negative_output" != "$expected_negative" ]]; then
+    echo "Unexpected signed runtime output:" >&2
+    printf '%s\n' "$negative_output" >&2
+    exit 1
+fi

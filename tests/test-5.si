@@ -1,0 +1,11 @@
+fn add(a: int, b: int): int {
+    return a + b;
+}
+
+fn main(): int {
+    let result: int = 20 + 22;
+
+    out(result);
+
+    return 0;
+}
