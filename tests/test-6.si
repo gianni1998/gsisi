@@ -1,0 +1,15 @@
+fn main(): int {
+    let i: int = 0;
+
+    while (i < 5) {
+        if (i == 2) {
+            out(20);
+        } else {
+            out(i);
+        }
+
+        i = i + 1;
+    }
+
+    return 0;
+}

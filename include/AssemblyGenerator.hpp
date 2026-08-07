@@ -16,6 +16,7 @@ private:
     struct FunctionContext {
         std::unordered_map<std::string, int> stackSlots;
         int nextOffset{0};
+        std::string functionName;
         std::string returnLabel;
     };
 
@@ -29,6 +30,9 @@ private:
     std::unordered_map<std::string, FunctionSignature> _signatures;
     std::unordered_set<std::string> _runtimeImports;
 
+    //----------------------------------
+    // Setup and validation
+    //----------------------------------
     void reset();
     void collectSignatures(const IRProgram& program);
     void collectRuntimeImports(const IRProgram& program);
@@ -39,29 +43,46 @@ private:
         const IRFunction& function
     ) const;
 
+    //----------------------------------
+    // Program and function emission
+    //----------------------------------
     void emitProgram(const IRProgram& program, std::ostream& output);
     void emitFunction(const IRFunction& function, std::ostream& output);
 
+    //----------------------------------
+    // Stack slots
+    //----------------------------------
     void allocateStackSlots(const IRFunction& function);
     void allocateSlot(const std::string& name);
     [[nodiscard]] int slotOffset(const std::string& name) const;
     [[nodiscard]] int stackSize() const noexcept;
     [[nodiscard]] std::string stackOperand(const std::string& name) const;
 
+    //----------------------------------
+    // Instruction emission
+    //----------------------------------
     void emitInstruction(const IRInstruction& instruction, std::ostream& output);
     void emitConstant(const IRInstruction& instruction, std::ostream& output);
     void emitLoad(const IRInstruction& instruction, std::ostream& output);
     void emitStore(const IRInstruction& instruction, std::ostream& output);
     void emitBinary(const IRInstruction& instruction, std::ostream& output);
+    void emitComparison(const IRInstruction& instruction, std::ostream& output);
     void emitUnary(const IRInstruction& instruction, std::ostream& output);
     void emitCall(const IRInstruction& instruction, std::ostream& output);
+    void emitJump(const IRInstruction& instruction, std::ostream& output);
+    void emitBranch(const IRInstruction& instruction, std::ostream& output);
     void emitReturn(const IRInstruction& instruction, std::ostream& output);
 
+    //----------------------------------
+    // Helpers
+    //----------------------------------
     static void requireDestination(const IRInstruction& instruction);
+    static void requireNoDestination(const IRInstruction& instruction);
     static void requireArgumentCount(
         const IRInstruction& instruction,
         std::size_t expected
     );
+
     [[nodiscard]] static bool isSupported(IROp operation) noexcept;
     [[nodiscard]] static const char* parameterRegister(std::size_t index);
     [[nodiscard]] static std::string functionLabel(const std::string& name);

@@ -96,11 +96,20 @@ void AssemblyGenerator::validateProgram(const IRProgram& program) const {
     }
 }
 
-void AssemblyGenerator::validateFunction(const IRFunction& function) const {
+void AssemblyGenerator::validateFunction(
+    const IRFunction& function
+) const {
     if (function.parameters.size() > 6) {
         throw std::runtime_error(
             "Assembly error: function '" + function.name +
             "' has more than 6 parameters"
+        );
+    }
+
+    if (function.blocks.empty()) {
+        throw std::runtime_error(
+            "Assembly error: function '" + function.name +
+            "' has no basic blocks"
         );
     }
 
@@ -138,9 +147,81 @@ void AssemblyGenerator::validateFunction(const IRFunction& function) const {
         }
     }
 
+    std::unordered_set<std::string> blockNames;
+
     for (const IRBlock& block : function.blocks) {
-        for (const IRInstruction& instruction : block.instructions) {
+        if (block.name.empty()) {
+            throw std::runtime_error(
+                "Assembly error: function '" + function.name +
+                "' contains an unnamed block"
+            );
+        }
+
+        if (!blockNames.insert(block.name).second) {
+            throw std::runtime_error(
+                "Assembly error: duplicate block '" + block.name +
+                "' in function '" + function.name + "'"
+            );
+        }
+
+        if (block.instructions.empty()) {
+            throw std::runtime_error(
+                "Assembly error: block '" + block.name +
+                "' is empty"
+            );
+        }
+
+        for (std::size_t index = 0;
+             index < block.instructions.size();
+             ++index) {
+            const IRInstruction& instruction = block.instructions[index];
             validateInstruction(instruction, function);
+
+            if (isTerminator(instruction.op) &&
+                index + 1 != block.instructions.size()) {
+                throw std::runtime_error(
+                    "Assembly error: terminator in block '" + block.name +
+                    "' is not the final instruction"
+                );
+            }
+        }
+
+        if (!isTerminator(block.instructions.back().op)) {
+            throw std::runtime_error(
+                "Assembly error: block '" + block.name +
+                "' has no terminator"
+            );
+        }
+    }
+
+    for (const IRBlock& block : function.blocks) {
+        const IRInstruction& terminator = block.instructions.back();
+
+        if (terminator.op == IROp::Jump) {
+            if (!blockNames.contains(terminator.target)) {
+                throw std::runtime_error(
+                    "Assembly error: jump from block '" + block.name +
+                    "' targets unknown block '" + terminator.target + "'"
+                );
+            }
+        }
+
+        if (terminator.op == IROp::Branch) {
+            if (!blockNames.contains(terminator.trueTarget)) {
+                throw std::runtime_error(
+                    "Assembly error: branch from block '" + block.name +
+                    "' targets unknown true block '" +
+                    terminator.trueTarget + "'"
+                );
+            }
+
+            if (!blockNames.contains(terminator.falseTarget)) {
+                throw std::runtime_error(
+                    "Assembly error: branch from block '" + block.name +
+                    "' targets unknown false block '" +
+                    terminator.falseTarget + "'"
+                );
+            }
         }
     }
 }
@@ -246,6 +327,45 @@ void AssemblyGenerator::validateInstruction(
             }
             return;
 
+        case IROp::Less:
+        case IROp::LessEqual:
+        case IROp::Greater:
+        case IROp::GreaterEqual:
+        case IROp::Equal:
+        case IROp::NotEqual:
+            requireDestination(instruction);
+            requireArgumentCount(instruction, 2);
+
+            if (instruction.type != Type::Bool) {
+                throw std::runtime_error(
+                    "Assembly error: comparison result must have type bool"
+                );
+            }
+            return;
+
+        case IROp::Jump:
+            requireNoDestination(instruction);
+            requireArgumentCount(instruction, 0);
+
+            if (instruction.target.empty()) {
+                throw std::runtime_error(
+                    "Assembly error: jump has no target"
+                );
+            }
+            return;
+
+        case IROp::Branch:
+            requireNoDestination(instruction);
+            requireArgumentCount(instruction, 1);
+
+            if (instruction.trueTarget.empty() ||
+                instruction.falseTarget.empty()) {
+                throw std::runtime_error(
+                    "Assembly error: branch requires true and false targets"
+                );
+            }
+            return;
+
         default:
             break;
     }
@@ -311,8 +431,11 @@ void AssemblyGenerator::emitFunction(
     output << "    ret\n\n";
 }
 
-void AssemblyGenerator::allocateStackSlots(const IRFunction& function) {
+void AssemblyGenerator::allocateStackSlots(
+    const IRFunction& function
+) {
     _context = FunctionContext{};
+    _context.functionName = function.name;
     _context.returnLabel = ".L_" + function.name + "_return";
 
     for (const IRParameter& parameter : function.parameters) {
@@ -388,6 +511,15 @@ void AssemblyGenerator::emitInstruction(
             emitBinary(instruction, output);
             return;
 
+        case IROp::Less:
+        case IROp::LessEqual:
+        case IROp::Greater:
+        case IROp::GreaterEqual:
+        case IROp::Equal:
+        case IROp::NotEqual:
+            emitComparison(instruction, output);
+            return;
+
         case IROp::Negate:
         case IROp::Not:
             emitUnary(instruction, output);
@@ -397,15 +529,22 @@ void AssemblyGenerator::emitInstruction(
             emitCall(instruction, output);
             return;
 
+        case IROp::Jump:
+            emitJump(instruction, output);
+            return;
+
+        case IROp::Branch:
+            emitBranch(instruction, output);
+            return;
+
         case IROp::Return:
             emitReturn(instruction, output);
             return;
-
-        default:
-            throw std::runtime_error(
-                "Assembly internal error: unsupported instruction reached emission"
-            );
     }
+
+    throw std::runtime_error(
+        "Assembly internal error: unsupported instruction reached emission"
+    );
 }
 
 void AssemblyGenerator::emitConstant(
@@ -574,15 +713,22 @@ bool AssemblyGenerator::isSupported(IROp operation) noexcept {
         case IROp::Subtract:
         case IROp::Multiply:
         case IROp::Divide:
+        case IROp::Less:
+        case IROp::LessEqual:
+        case IROp::Greater:
+        case IROp::GreaterEqual:
+        case IROp::Equal:
+        case IROp::NotEqual:
         case IROp::Negate:
         case IROp::Not:
         case IROp::Call:
+        case IROp::Jump:
+        case IROp::Branch:
         case IROp::Return:
             return true;
-
-        default:
-            return false;
     }
+
+    return false;
 }
 
 const char* AssemblyGenerator::parameterRegister(std::size_t index) {
@@ -608,4 +754,103 @@ std::string AssemblyGenerator::blockLabel(
     const std::string& blockName
 ) {
     return ".L_" + functionName + "_" + blockName;
+}
+
+void AssemblyGenerator::requireNoDestination(
+    const IRInstruction& instruction
+) {
+    if (!instruction.dst.empty()) {
+        throw std::runtime_error(
+            "Assembly error: instruction '" +
+            std::string(toString(instruction.op)) +
+            "' cannot have a destination"
+        );
+    }
+}
+
+void AssemblyGenerator::emitComparison(
+    const IRInstruction& instruction,
+    std::ostream& output
+) {
+    output
+        << "    mov eax, "
+        << stackOperand(instruction.args[0])
+        << '\n';
+
+    output
+        << "    cmp eax, "
+        << stackOperand(instruction.args[1])
+        << '\n';
+
+    switch (instruction.op) {
+        case IROp::Equal:
+            output << "    sete al\n";
+            break;
+
+        case IROp::NotEqual:
+            output << "    setne al\n";
+            break;
+
+        case IROp::Less:
+            output << "    setl al\n";
+            break;
+
+        case IROp::LessEqual:
+            output << "    setle al\n";
+            break;
+
+        case IROp::Greater:
+            output << "    setg al\n";
+            break;
+
+        case IROp::GreaterEqual:
+            output << "    setge al\n";
+            break;
+
+        default:
+            throw std::runtime_error(
+                "Assembly internal error: invalid comparison instruction"
+            );
+    }
+
+    output << "    movzx eax, al\n";
+    output
+        << "    mov " << stackOperand(instruction.dst)
+        << ", eax\n";
+}
+
+void AssemblyGenerator::emitJump(
+    const IRInstruction& instruction,
+    std::ostream& output
+) {
+    output
+        << "    jmp "
+        << blockLabel(_context.functionName, instruction.target)
+        << '\n';
+}
+
+void AssemblyGenerator::emitBranch(
+    const IRInstruction& instruction,
+    std::ostream& output
+) {
+    output
+        << "    cmp "
+        << stackOperand(instruction.args[0])
+        << ", 0\n";
+
+    output
+        << "    jne "
+        << blockLabel(
+            _context.functionName,
+            instruction.trueTarget
+        )
+        << '\n';
+
+    output
+        << "    jmp "
+        << blockLabel(
+            _context.functionName,
+            instruction.falseTarget
+        )
+        << '\n';
 }

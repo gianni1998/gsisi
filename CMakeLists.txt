@@ -64,10 +64,15 @@ if(BUILD_TESTING)
         tests/AssemblyGeneratorTests.cpp
     )
 
+    add_executable(control_flow_assembly_tests
+        tests/ControlFlowAssemblyTests.cpp
+    )
+
     target_include_directories(parser_tests PRIVATE include)
     target_link_libraries(semantic_tests PRIVATE gsisi_frontend)
     target_link_libraries(ir_generator_tests PRIVATE gsisi_frontend)
     target_link_libraries(assembly_generator_tests PRIVATE gsisi_frontend)
+    target_link_libraries(control_flow_assembly_tests PRIVATE gsisi_frontend)
 
     add_test(
         NAME parser_tests
@@ -84,23 +89,28 @@ if(BUILD_TESTING)
         COMMAND ir_generator_tests
     )
 
-    # add_test(
-    #     NAME semantic_sample
-    #     COMMAND si_compiler
-    #         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test-2.si
-    #         ${CMAKE_CURRENT_SOURCE_DIR}/build/test-2.asm
-    # )
+    add_test(
+        NAME semantic_sample
+        COMMAND si_compiler
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/test-2.si
+            ${CMAKE_CURRENT_SOURCE_DIR}/build/test-2.asm
+    )
 
-    # add_test(
-    #     NAME compiler_ir_smoke_test
-    #     COMMAND si_compiler
-    #             ${CMAKE_CURRENT_SOURCE_DIR}/tests/test-3.si
-    #             ${CMAKE_CURRENT_SOURCE_DIR}/build/test-3.asm
-    # )
+    add_test(
+        NAME compiler_ir_smoke_test
+        COMMAND si_compiler
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/test-3.si
+                ${CMAKE_CURRENT_SOURCE_DIR}/build/test-3.asm
+    )
 
     add_test(
         NAME assembly_generator_tests
         COMMAND assembly_generator_tests
+    )
+
+    add_test(
+        NAME control_flow_assembly_tests
+        COMMAND control_flow_assembly_tests
     )
 
     find_program(
@@ -125,6 +135,17 @@ if(BUILD_TESTING)
                 ${CMAKE_CURRENT_SOURCE_DIR}
                 ${CMAKE_CURRENT_BINARY_DIR}/backend-smoke
         )
+
+        add_test(
+            NAME control_flow_native_smoke
+            COMMAND
+                bash
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_control_flow_smoke_test.sh
+                $<TARGET_FILE:si_compiler>
+                ${CMAKE_CURRENT_SOURCE_DIR}
+                ${CMAKE_CURRENT_BINARY_DIR}/control-flow-smoke
+    )
+
     else()
         message(WARNING
             "NASM or ld was not found; the native runtime smoke test is disabled"
