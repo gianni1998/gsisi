@@ -1,9 +1,9 @@
-#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <memory>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <system_error>
 #include <utility>
@@ -13,6 +13,8 @@
 #include "BuildDriver.hpp"
 #include "IR.hpp"
 #include "IRGenerator.hpp"
+#include "IROptimiser.hpp"
+#include "IRPrinter.hpp"
 #include "Lexer.hpp"
 #include "Parser.hpp"
 #include "SemanticAnalyser.hpp"
@@ -94,7 +96,7 @@ int main(int argc, char* argv[]) {
     if (argc != 3) {
         std::cerr
             << "Usage: " << argv[0]
-            << " <source_file.si> <output_executable>\n";
+            << " <source_file.si> <output_executable>";
 
         return 1;
     }
@@ -109,24 +111,42 @@ int main(int argc, char* argv[]) {
         const std::filesystem::path runtimePath =
             compilerDirectory() / "libsi" / "out.asm";
 
+        // 1. Lexing
         Lexer lexer(readSourceFile(sourcePath));
         std::vector<Token> tokens = lexer.tokenise();
 
+        // 2. Parsing
         Parser parser(std::move(tokens));
         std::unique_ptr<ProgramNode> ast = parser.parseProgram();
 
+        // 3. Semantic analysis
         SemanticAnalyser analyser;
         analyser.analyze(*ast);
 
+        // 4. IR generation
         IRGenerator irGenerator;
         IRProgram ir = irGenerator.generate(*ast);
 
+        std::cout << "--- IR before optimisation ---";
+        dumpIR(std::cout, ir);
+        std::cout << "--------------------------------";
+
+        // 5. IR optimisation
+        IROptimiser optimiser;
+        optimiser.optimise(ir);
+
+        std::cout << "--- IR after optimisation ---";
+        dumpIR(std::cout, ir);
+        std::cout << "-------------------------------";
+
+        // 6. Assembly generation
         std::ostringstream assemblyBuffer;
         AssemblyGenerator assemblyGenerator;
         assemblyGenerator.generate(ir, assemblyBuffer);
 
         writeAssemblyFile(assemblyPath, assemblyBuffer.str());
 
+        // 7. Assemble and link
         BuildDriver buildDriver;
         buildDriver.build(
             assemblyPath,
@@ -136,14 +156,12 @@ int main(int argc, char* argv[]) {
 
         std::cout
             << "Built executable: "
-            << executablePath
-            << '\n';
+            << executablePath;
     }
     catch (const std::exception& error) {
         std::cerr
             << "Compilation error: "
-            << error.what()
-            << '\n';
+            << error.what();
 
         return 1;
     }

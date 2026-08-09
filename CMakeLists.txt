@@ -68,11 +68,16 @@ if(BUILD_TESTING)
         tests/ControlFlowAssemblyTests.cpp
     )
 
+    add_executable(optimiser_tests
+        tests/IROptimiserTests.cpp
+    )
+
     target_include_directories(parser_tests PRIVATE include)
     target_link_libraries(semantic_tests PRIVATE gsisi_frontend)
     target_link_libraries(ir_generator_tests PRIVATE gsisi_frontend)
     target_link_libraries(assembly_generator_tests PRIVATE gsisi_frontend)
     target_link_libraries(control_flow_assembly_tests PRIVATE gsisi_frontend)
+    target_link_libraries(optimiser_tests PRIVATE gsisi_frontend)
 
     add_test(
         NAME parser_tests
@@ -113,6 +118,11 @@ if(BUILD_TESTING)
         COMMAND control_flow_assembly_tests
     )
 
+    add_test(
+        NAME optimiser_tests
+        COMMAND optimiser_tests
+    )
+
     find_program(
         NASM_EXECUTABLE
         nasm
@@ -144,6 +154,16 @@ if(BUILD_TESTING)
                 $<TARGET_FILE:si_compiler>
                 ${CMAKE_CURRENT_SOURCE_DIR}
                 ${CMAKE_CURRENT_BINARY_DIR}/control-flow-smoke
+    )
+
+    add_test(
+        NAME optimiser_native_smoke
+        COMMAND
+            bash
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_optimiser_smoke_test.sh
+            $<TARGET_FILE:si_compiler>
+            ${CMAKE_CURRENT_SOURCE_DIR}
+            ${CMAKE_CURRENT_BINARY_DIR}/optimiser-smoke
     )
 
     else()

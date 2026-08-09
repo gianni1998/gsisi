@@ -1,0 +1,15 @@
+fn main(): int {
+    let folded: int = 5 + 5;
+
+    if (true) {
+        out(folded);
+    } else {
+        out(999);
+    }
+
+    while (false) {
+        out(888);
+    }
+
+    return 0;
+}
