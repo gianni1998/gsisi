@@ -8,16 +8,16 @@ Each blog post has its own Git branch containing the complete source code as it 
 
 | #  | Title | Branch |
 | -- | ----- | ------ |
-| 01 | [How Compilers Work: Source Code to Machine Code]((https://www.biosconfessions.com/posts/from-source-to-machine-code/1-the-black-box/) | - |
-| 02 | [Design a Programming Language and Compiler in C++]((https://www.biosconfessions.com/posts/from-source-to-machine-code/2-language-design/) | [2-language-design](https://github.com/gianni1998/gsisi/tree/2-language-design) |
-| 03 | [Build a Lexer in C++: Tokens and Lexical Analysis]((https://www.biosconfessions.com/posts/from-source-to-machine-code/3-building-a-lexer/) | [3-building-a-lexer](https://github.com/gianni1998/gsisi/tree/3-building-a-lexer) |
-| 04 | [Build a Recursive Descent Parser and AST in C++]((https://www.biosconfessions.com/posts/from-source-to-machine-code/4-recursive-descent-parser/) | [4-recursive-descent-parser](https://github.com/gianni1998/gsisi/tree/4-recursive-descent-parser) |
-| 05 | [Semantic Analysis in C++: Symbols, Scopes and Types]((https://www.biosconfessions.com/posts/from-source-to-machine-code/5-semantic-analysis/) | [5-semantic-analysis](https://github.com/gianni1998/gsisi/tree/5-semantic-analysis) |
-| 06 | [Build a Compiler IR in C++: Three-Address Code]((https://www.biosconfessions.com/posts/from-source-to-machine-code/6-intermediate-representation/) | [6-intermediate-representation](https://github.com/gianni1998/gsisi/tree/6-intermediate-representation) |
-| 07 | [Build a Compiler Backend: Generate x86-64 Assembly]((https://www.biosconfessions.com/posts/from-source-to-machine-code/7-backend-begins/) | [7-backend-begins](https://github.com/gianni1998/gsisi/tree/7-backend-begins) |
-| 08 | [Compiler Function Calls: System V ABI and Runtime]((https://www.biosconfessions.com/posts/from-source-to-machine-code/8-runtime/) | [8-runtime](https://github.com/gianni1998/gsisi/tree/8-runtime) |
-| 09 | [Compiler Control Flow: x86-64 Branches and Loops]((https://www.biosconfessions.com/posts/from-source-to-machine-code/9-control-flow/) | [9-control-flow](https://github.com/gianni1998/gsisi/tree/9-control-flow) |
-| 10 | [Compiler Optimisation in C++: Folding and Dead Code]((https://www.biosconfessions.com/posts/from-source-to-machine-code/10-optimisation/) | [10-optimisation](https://github.com/gianni1998/gsisi/tree/10-optimisation) |
+| 01 | [How a Compiler Works: From Source Code to Machine Code](https://www.biosconfessions.com/posts/from-source-to-machine-code/1-the-black-box/) | - |
+| 02 | [How to Design a Programming Language and Compiler in C++](https://www.biosconfessions.com/posts/from-source-to-machine-code/2-language-design/) | [2-language-design](https://github.com/gianni1998/gsisi/tree/2-language-design) |
+| 03 | [How to Build a Lexer in C++: Lexical Analysis and Tokens](https://www.biosconfessions.com/posts/from-source-to-machine-code/3-building-a-lexer/) | [3-building-a-lexer](https://github.com/gianni1998/gsisi/tree/3-building-a-lexer) |
+| 04 | [How to Build a Recursive Descent Parser and AST in C++](https://www.biosconfessions.com/posts/from-source-to-machine-code/4-recursive-descent-parser/) | [4-recursive-descent-parser](https://github.com/gianni1998/gsisi/tree/4-recursive-descent-parser) |
+| 05 | [Semantic Analysis in a Compiler: Symbols, Scopes and Types in C++](https://www.biosconfessions.com/posts/from-source-to-machine-code/5-semantic-analysis/) | [5-semantic-analysis](https://github.com/gianni1998/gsisi/tree/5-semantic-analysis) |
+| 06 | [How to Build a Compiler IR in C++: Three-Address Code](https://www.biosconfessions.com/posts/from-source-to-machine-code/6-intermediate-representation/) | [6-intermediate-representation](https://github.com/gianni1998/gsisi/tree/6-intermediate-representation) |
+| 07 | [How to Build a Compiler Backend in C++: x86-64 Code Generation](https://www.biosconfessions.com/posts/from-source-to-machine-code/7-backend-begins/) | [7-backend-begins](https://github.com/gianni1998/gsisi/tree/7-backend-begins) |
+| 08 | [Compiler Function Calls in C++: System V ABI, x86-64 and Runtime](https://www.biosconfessions.com/posts/from-source-to-machine-code/8-runtime/) | [8-runtime](https://github.com/gianni1998/gsisi/tree/8-runtime) |
+| 09 | [Compiler Control Flow in C++: x86-64 Branches, Loops and Jumps](https://www.biosconfessions.com/posts/from-source-to-machine-code/9-control-flow/) | [9-control-flow](https://github.com/gianni1998/gsisi/tree/9-control-flow) |
+| 10 | [Compiler Optimisation in C++: Constant Folding and Dead Code Elimination](https://www.biosconfessions.com/posts/from-source-to-machine-code/10-optimisation/) | [10-optimisation](https://github.com/gianni1998/gsisi/tree/10-optimisation) |
 
 > Posts 1 and 2 introduce the compiler pipeline, language design, and project setup, so they do not yet produce a compiler executable.
 
@@ -45,13 +45,14 @@ git switch 3-building-a-lexer
 Start the Docker development environment:
 
 ```bash
-./scripts/dev-shell.sh
+sh docker.sh container-start
 ```
 
 Then build gsisi from inside the Docker shell:
 
 ```bash
-./scripts/build.sh
+cmake -S . -B build
+cmake --build build
 ```
 
 ## ▶️ Run
